@@ -12,16 +12,10 @@ import csv
 
 
 # Predefined LLM model choices
-AVAILABLE_MODELS = {
-    "gemma-7b": ("google/gemma-7b", 7),
-    "deepseek-distill-qwen": ("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", 7),
-    "qwen2-7B-instruct": ("Qwen/Qwen2-7B-Instruct", 7),
-    "mistral-7B-instruct": ("mistralai/Mistral-7B-Instruct-v0.1", 7),
-    "deepseek-distill-qwen-32B": ("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", 32),
-    "qwen2-57B-instruct": ("Qwen/Qwen2-57B-A14B-Instruct", 57),
-    "mixtral-8x22B-instruct": ("mistralai/Mixtral-8x22B-Instruct-v0.1", 22 * 8),
-}
-
+AVAILABLE_MODELS = {'mistral': 'mistralai/Mistral-7B-Instruct-v0.1',
+                    'qwen': 'Qwen/Qwen2.5-VL-7B-Instruct',
+                    'deepseek': 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B',
+                    "gemma-7b": "google/gemma-7b"}
 
 def load_model(model_name):
     if model_name not in AVAILABLE_MODELS:
@@ -108,15 +102,11 @@ def process_truthfulQA(model_choice, input_csv, output_csv, self_consistency=4):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_choice", type=str, required=True, choices=AVAILABLE_MODELS.keys())
-    parser.add_argument("--input_json", type=str, required=True)
+    parser.add_argument("--input_json", type=str, default='../data/input/TQA/truthfulQA.csv')
     
     args = parser.parse_args()
 
     input_json = args.input_json 
-
-    print(args)
-
-    output_json = f"{args.model_choice}_SLL_output.csv"
+    output_json = f"../data/generated/TQA/{args.model_choice}_likelihood.csv"
     
-
     process_truthfulQA(args.model_choice, args.input_json, output_json)

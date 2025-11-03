@@ -33,7 +33,6 @@ def normalize_probs(df: pd.DataFrame) -> pd.DataFrame:
 def main():
     args = parse_args()
     model = args.model
-    # model = "gemma-7B-it"
     
     path = f'../final_results/MIMIC_extract/SLL_full/{model}/logits'
     dest = f'../final_results/MIMIC_extract/SLL_full/{model}/norm_probs'

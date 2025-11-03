@@ -2,7 +2,7 @@ import pandas as pd
 import re
 from sklearn.metrics import roc_auc_score, brier_score_loss
 import numpy as np
-
+import torch
 
 
 def format_prompts_general(dataset, p_hats, texts, cot=None, is_phat=True, raw=False, raw_probs=None):
@@ -98,7 +98,27 @@ def parse(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def evaluate(df: pd.DataFrame, num_instances = int, dataset = str):
+def normalize_probs(df: pd.DataFrame) -> pd.DataFrame:
+    norm_yes, norm_no = [], []
+
+    for _, row in df.iterrows():
+        yes = row['prob_yes']
+        no = row['prob_no']
+
+        values = torch.Tensor([yes, no])
+        normalized = values / values.sum()
+
+        norm_yes.append(float(normalized[0]))
+        norm_no.append(float(normalized[1]))
+
+    df['norm_yes'] = norm_yes
+    df['norm_no'] = norm_no
+    return df
+
+
+def evaluate_old(df: pd.DataFrame, num_instances = int, dataset = str):
+
+    # ======================= 2. Self-Consistency (LLM Generation) =========================
     # NUM_INSTANCES = 300         # 479 for test set
     NUM_INSTANCES = num_instances
     NUM_ROUNDS = 10
@@ -201,5 +221,140 @@ def evaluate(df: pd.DataFrame, num_instances = int, dataset = str):
     
     scores = {'average': avg_scores,
               'bootstrap': bs_scores,}
+
+    return scores
+
+def evaluate(gen_df: pd.DataFrame, likelihood_df: pd.DataFrame, num_instances=int, dataset=str):
+    def compute_ece(y_true, y_probs, n_bins=10):
+        y_true = np.array(y_true)
+        y_probs = np.array(y_probs)
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+        ece = 0.0
+        for i in range(n_bins):
+            bin_lower = bin_edges[i]
+            bin_upper = bin_edges[i + 1]
+            mask = (y_probs > bin_lower) & (y_probs <= bin_upper)
+            if np.any(mask):
+                bin_accuracy = np.mean(y_true[mask])
+                bin_confidence = np.mean(y_probs[mask])
+                ece += np.abs(bin_accuracy - bin_confidence) * np.sum(mask) / len(y_true)
+        return ece
+    
+    # ======================= 1. Sequence Likelihood =========================
+    # likelihood_df = pd.read_csv(f'../data/{dataset}/likelihood.csv')
+    likelihood_df["gold"] = likelihood_df["gold"].map({"Yes": 1, "No": 0}).astype(int)
+
+    rounds = likelihood_df["round"].unique()
+    per_round_scores = {}
+
+    for r in rounds:
+        rdf = likelihood_df.loc[likelihood_df["round"] == r]
+        y_true_r = rdf["gold"]
+        y_probs_r = rdf["prob_yes"]
+
+        auroc_r = roc_auc_score(y_true_r, y_probs_r)
+        brier_r = brier_score_loss(y_true_r, y_probs_r)
+        ece_r = compute_ece(y_true_r, y_probs_r)
+
+        per_round_scores[r] = {"auroc": auroc_r, "brier score": brier_r, "ece": ece_r}
+
+    # Average over rounds
+    avg_df = likelihood_df.groupby("id", as_index=False)["prob_yes"].mean()
+    avg_df = avg_df.merge(likelihood_df[["id", "gold"]].drop_duplicates(), on="id")
+
+    auroc_avg_likelihood = roc_auc_score(avg_df["gold"], avg_df["prob_yes"])
+    brier_avg_likelihood = brier_score_loss(avg_df["gold"], avg_df["prob_yes"])
+    ece_avg_likelihood = compute_ece(avg_df["gold"], avg_df["prob_yes"])
+
+    likelihood_scores = {
+        "per_round": per_round_scores,
+        "average": {
+            "auroc": auroc_avg_likelihood,
+            "brier score": brier_avg_likelihood,
+            "ece": ece_avg_likelihood
+        }
+    }
+
+    # ======================= 2. Self-Consistency (LLM Generation) =========================
+    NUM_INSTANCES = num_instances
+    NUM_ROUNDS = 10
+    # y_true = pd.read_csv(f'../data/{dataset}/test.csv')['y_true']
+    y_true = likelihood_df["gold"]
+
+    all_predictions = [[] for _ in range(NUM_INSTANCES)]
+    for i in range(1, NUM_ROUNDS + 1):
+        rdf = gen_df.loc[gen_df['round'] == i]
+        preds = rdf["output"].astype(str).tolist()
+        for j in range(NUM_INSTANCES):
+            all_predictions[j].append(preds[j])
+
+    # One-time average version
+    avg_probs = []
+    for preds in all_predictions:
+        valid_preds = []
+        for p in preds:
+            if p == '0.0':
+                valid_preds.append(0)
+            elif p == '1.0':
+                valid_preds.append(1)
+        avg_probs.append(np.mean(valid_preds) if valid_preds else np.nan)
+
+    avg_probs = np.array(avg_probs)
+    valid_mask = ~np.isnan(avg_probs)
+    avg_y_true = np.array(y_true)[valid_mask]
+
+    auroc_avg = roc_auc_score(avg_y_true, avg_probs[valid_mask])
+    brier_avg = brier_score_loss(avg_y_true, avg_probs[valid_mask])
+    ece_avg = compute_ece(avg_y_true, avg_probs[valid_mask])
+
+    # Bootstrap version
+    BOOTSTRAP_ITERATIONS = 15
+    SAMPLE_SIZE = 9 
+
+    def bootstrap_prob_yes(valid_preds, n_iter=15, sample_size=9):
+        results = []
+        for _ in range(n_iter):
+            sample = np.random.choice(valid_preds, size=sample_size, replace=True)
+            prob_yes = np.mean([int(p) for p in sample])
+            results.append(prob_yes)
+        return results
+
+    bootstrap_results = []
+    invalid_indices = [
+        idx for idx, preds in enumerate(all_predictions)
+        if all(p not in ['0.0', '1.0'] for p in preds)
+    ]
+
+    for idx, preds in enumerate(all_predictions):
+        if idx in invalid_indices:
+            bootstrap_results.append([np.nan] * BOOTSTRAP_ITERATIONS)
+        else:
+            valid_preds = []
+            for p in preds:
+                if p == '0.0':
+                    valid_preds.append(0)
+                elif p == '1.0':
+                    valid_preds.append(1)
+            bootstrap_results.append(bootstrap_prob_yes(valid_preds))
+
+    bootstrap_df = pd.DataFrame(bootstrap_results)
+    bootstrap_df.insert(0, "Instance ID", list(range(NUM_INSTANCES)))
+
+    bootstrap_means = bootstrap_df.iloc[:, 1:].mean(axis=1).values
+    filtered_y_true = np.array(y_true)[~np.isnan(bootstrap_means)]
+    filtered_probs = bootstrap_means[~np.isnan(bootstrap_means)]
+
+    auroc_bs = roc_auc_score(filtered_y_true, filtered_probs)
+    brier_bs = brier_score_loss(filtered_y_true, filtered_probs)
+    ece_bs = compute_ece(filtered_y_true, filtered_probs)
+
+    bs_scores = {'auroc': auroc_bs, 'brier score': brier_bs, 'ece': ece_bs}
+    avg_scores = {'auroc': auroc_avg, 'brier score': brier_avg, 'ece': ece_avg}
+
+    scores = {
+        'likelihood': likelihood_scores,
+        'average': avg_scores,
+        'bootstrap': bs_scores,
+    }
 
     return scores

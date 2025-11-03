@@ -10,18 +10,23 @@ from huggingface_hub import login
 from utils import compute_answer_likelihood
 
 
+AVAILABLE_MODELS = {'mistral': 'mistralai/Mistral-7B-Instruct-v0.1',
+                    'qwen': 'Qwen/Qwen2.5-VL-7B-Instruct',
+                    'deepseek': 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B',
+                    "gemma-7b": "google/gemma-7b"}
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str)
     parser.add_argument('--num_loops', type=int, default=10, help='number of self loops')
-    parser.add_argument('--inputdir', type=str, default='patient_data_48_hrs_over_65', help='input directory')
-    parser.add_argument('--outputdir', type=str, default='qwen_full', help='output directory')
+    parser.add_argument('--inputdir', type=str, default='../data/input/EHRShot', help='input directory')
     args = parser.parse_args()
     return args
 
 
-def model_setup():
-    model_name = 'Qwen/Qwen2-7B-Instruct'
+def model_setup(model_selection: str):
+    model_name = AVAILABLE_MODELS[model_selection]
 
     max_new_tokens = 25 if 'deepseek' not in model_name else 100
 
@@ -52,9 +57,12 @@ def main():
     args = parse_args()
     num_loops = args.num_loops
     input_folder = args.inputdir
-    output_folder = args.outputdir
+    model_selection = args.model
 
-    model, tokenizer, max_new_tokens = model_setup()
+    output_folder = f'../data/generated/EHRShot'
+    os.makedirs(output_folder, exist_ok=True) 
+
+    model, tokenizer, max_new_tokens = model_setup(model_selection)
     
     instructions = {
     'hypertension': """
@@ -155,27 +163,24 @@ Diagnosis:
 
                 temp['prediction'] = [text]
 
-                print(f"Done with round {l} for condition {condition} and patient_file {filename}")
+                # print(f"Done with round {l} for condition {condition} and patient_file {filename}")
 
                 df = pd.DataFrame(temp)
-
-                file_exists = os.path.exists(f'results/{output_folder}.csv')
-
-                df.to_csv(f'results/{output_folder}.csv', mode='a', header=not file_exists, index=False)
+                file_exists = os.path.exists(f'{output_folder}/{model_selection}_output.csv')
+                df.to_csv(f'{output_folder}/{model_selection}_output.csv', mode='a', header=not file_exists, index=False)
 
                 #Calculate sequence likelihood
                 if l == 1:
                     print(f"Computing likelihood")
-                    prob_rec = compute_answer_likelihood(model=model, tokenizer=tokenizer, input_text=prompt, device=device)
+                    prob_rec = compute_answer_likelihood(model=model, tokenizer=tokenizer, input_text=prompt)
 
                     temp['prob_pos'] = [prob_rec['prob_pos']]
                     temp['prob_neg'] = [prob_rec['prob_neg']]
 
                     df_likelihood = pd.DataFrame(temp)
 
-                    file_exists = os.path.exists(f'results/{output_folder}_likelihood.csv')
-
-                    df_likelihood.to_csv(f'results/{output_folder}_likelihood.csv', mode='a', header=not file_exists, index=False)
+                    file_exists = os.path.exists(f'{output_folder}/{model_selection}_likelihood.csv')
+                    df_likelihood.to_csv(f'{output_folder}/{model_selection}_likelihood.csv', mode='a', header=not file_exists, index=False)
 
 
 if __name__ == '__main__':
