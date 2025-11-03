@@ -16,5 +16,5 @@ On MIMIC-Extract, we focus on the tasks of length-of-stay prediction (3 and 7 da
 
 ## How to Run
 1. Run generate.sh with the desired dataset (MIMIC, EHRShot, TQA) and model (mistral, qwen, deepseek, gemma) to generate the single-LLM outputs used as input for the MUSE algorithm
-2. Run evaluate.sh with the desired dataset and model to evaluate single-LLM performance
-3. To do: run MUSE script
+2. Run evaluate.sh with the desired dataset and model to evaluate single-LLM performance - this script also creates files with the bootstrapped probabilities / aggregated likelihood scores which are used by MUSE
+3. To execute the MUSE algorithm, run MUSE.py with the arguments dataset, mode (gen or probs) and task (only applicable for MIMIC: los3, los7, mort_hosp)
