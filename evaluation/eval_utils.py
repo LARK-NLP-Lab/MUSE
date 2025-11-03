@@ -224,7 +224,10 @@ def evaluate_old(df: pd.DataFrame, num_instances = int, dataset = str):
 
     return scores
 
-def evaluate(gen_df: pd.DataFrame, likelihood_df: pd.DataFrame, num_instances=int, dataset=str):
+def evaluate(gen_df: pd.DataFrame, likelihood_df: pd.DataFrame, num_instances=int, dataset=str, model=str, task_name=None):
+    if task_name is None:
+        task_name = ""
+    
     def compute_ece(y_true, y_probs, n_bins=10):
         y_true = np.array(y_true)
         y_probs = np.array(y_probs)
@@ -261,6 +264,9 @@ def evaluate(gen_df: pd.DataFrame, likelihood_df: pd.DataFrame, num_instances=in
     # Average over rounds
     avg_df = likelihood_df.groupby("id", as_index=False)["prob_yes"].mean()
     avg_df = avg_df.merge(likelihood_df[["id", "gold"]].drop_duplicates(), on="id")
+
+    # Save aggregated sequence likelihood probabilities
+    avg_df.to_csv(f'../data/generated/{dataset}/likelihood/{model}_agg_seq_prob{task_name}.csv', index=False)
 
     auroc_avg_likelihood = roc_auc_score(avg_df["gold"], avg_df["prob_yes"])
     brier_avg_likelihood = brier_score_loss(avg_df["gold"], avg_df["prob_yes"])
@@ -339,6 +345,10 @@ def evaluate(gen_df: pd.DataFrame, likelihood_df: pd.DataFrame, num_instances=in
 
     bootstrap_df = pd.DataFrame(bootstrap_results)
     bootstrap_df.insert(0, "Instance ID", list(range(NUM_INSTANCES)))
+
+    # Save bootstrapped probability dataframe
+    bootstrap_df.to_csv(f'../data/generated/{dataset}/output/{model}_bs_prob_yes{task_name}.csv', index=False)
+
 
     bootstrap_means = bootstrap_df.iloc[:, 1:].mean(axis=1).values
     filtered_y_true = np.array(y_true)[~np.isnan(bootstrap_means)]

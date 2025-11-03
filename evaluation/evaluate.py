@@ -39,12 +39,15 @@ def main():
 
     normalized_sll = normalize_probs(sll_df)
     parsed_gen = parse(gen_df)
-
-    scores = evaluate(parsed_gen, normalized_sll, num_instances)
-
-
-    with open(f'{score_path}_scores.json', 'w') as f:
-        json.dump(scores, f)
+    if dataset == 'MIMIC':
+        for task in ['los3', 'los7', 'mort_hosp']:
+            scores = evaluate(parsed_gen, normalized_sll, num_instances, dataset, model, task)
+            with open(f'{score_path}_scores.json', 'w') as f:
+                json.dump(scores, f)
+    else:
+        scores = evaluate(parsed_gen, normalized_sll, num_instances, dataset, model, task)
+        with open(f'{score_path}_scores.json', 'w') as f:
+            json.dump(scores, f)
 
 if __name__ == '__main__':
     main()

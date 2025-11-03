@@ -79,7 +79,7 @@ def insert_randomness(text: str):
 
 # Main function to process dataset
 def main(model_choice, input_csv, task, self_con):
-    output_folder = f'../data/generated/MIMIC_extract/{model_choice}/{task}'
+    output_folder = f'../data/generated/MIMIC_extract'
     os.makedirs(output_folder, exist_ok=True) 
     
     if not task:
@@ -149,10 +149,10 @@ def main(model_choice, input_csv, task, self_con):
 
         # Save all accumulated likelihoods and outputs
         likelihood_df = pd.DataFrame(all_likelihood)
-        likelihood_df.to_csv(f'{output_folder}/{model_choice}_likelihood.csv', index=False)
+        likelihood_df.to_csv(f'{output_folder}/likelihood/{task}_{model_choice}_likelihood.csv', index=False)
 
         final_df = pd.concat(all_outputs, ignore_index=True)
-        final_df.to_csv(f'{output_folder}/{model_choice}_output.csv', index=False)
+        final_df.to_csv(f'{output_folder}/output/{task}_{model_choice}_output.csv', index=False)
         print(f'Round {i+1} done.')
 
 # Argument parser setup
