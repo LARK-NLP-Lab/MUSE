@@ -3,7 +3,7 @@
 ## Overview
 This repository contains code for the paper "Simple Yet Effective: An Information-Theoretic Approach to Multi-LLM Uncertainty Quantification".
 
-Link: https://arxiv.org/abs/2507.07236
+Link: https://aclanthology.org/2025.emnlp-main.1551/
 
 ## Data
 We used three binary datasets, two medical- and one general-domain:
